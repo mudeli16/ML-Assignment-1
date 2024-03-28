@@ -1,75 +1,64 @@
-# Load tidyverse package
+# Loading necessary packages
 library(tidyverse)
-
-# Load tidymodels package
 library(tidymodels)
 
-# Load janitor package
-library(janitor)
+# Loading the data that is csv file
+students_data <- read_csv("studentInfo.csv")
 
-# Read in the data
-students <- read_csv("studentInfo.csv")
+# Modify variables
+students_data <- students_data %>%
+  mutate(pass_as_binary = ifelse(final_result == "Pass", 1, 0)) %>% # Convert pass to binary
+  mutate(pass_as_factor = as.factor(pass_as_binary)) %>%  # Convert pass to factor
+  mutate(disability_as_factor = as.factor(disability))  # Convert disability to factor
 
-# Mutate variables
-students <- students %>%
-  mutate(pass = ifelse(final_result == "Pass", 1, 0)) %>%
-  mutate(pass = as.factor(pass))
+# Review dataset
+students_data
 
-students <- students %>%
-  mutate(disability = as.factor(disability))
+# constructing dditionl features
+students_data <- students_data %>%
+  mutate(imd_band_as_factor = factor(imd_band, levels = c("0-10%", "10-20%", "20-30%", "30-40%", "40-50%", "50-60%", "60-70%", "70-80%", "80-90%", "90-100%"))) %>%
+  mutate(imd_band_as_integer = as.integer(imd_band_as_factor)) # Convert IMD band to integer
 
-# Examine the data
-students
-
-# Feature engineering
-students <- students %>%
-  mutate(imd_band = factor(imd_band, levels = c("0-10%", "10-20%", "20-30%", "30-40%", "40-50%", "50-60%", "60-70%", "70-80%", "80-90%", "90-100%"))) %>%
-  mutate(imd_band = as.integer(imd_band))
-
-# Split data
+#Now Spliting the data
 set.seed(20230712)
-train_test_split <- initial_split(students, prop = 0.80)
-data_train <- training(train_test_split)
-data_test <- testing(train_test_split)
+training_testing_split <- initial_split(students_data, prop = 0.80)
+training_data <- training(training_testing_split)
+testing_data <- testing(training_testing_split)
 
 # Create a recipe
-my_rec <- recipe(pass ~ disability + imd_band, data = data_train)
+recipe_model <- recipe(pass_as_factor ~ disability_as_factor + imd_band_as_integer, data = training_data) # Recipe formulation
 
-# Specify the model
-my_mod <- 
+# Defining the model
+logistic_regression_model <- 
   logistic_reg() %>% 
   set_engine("glm") %>% 
   set_mode("classification")
 
-# Add model and recipe to workflow
-my_wf <- 
+# Adding the  model and recipe to the workflow
+workflow_model <- 
   workflow() %>% 
-  add_model(my_mod) %>% 
-  add_recipe(my_rec)
-
-# Fit model
-fitted_model <- fit(my_wf, data = data_train)
-
-# Create a resampling object for the testing data
-test_split <- rsample::initial_split(data_test, prop = 0.8)
-
-# Fit the model using the testing data
-final_fit <- last_fit(my_wf, split = test_split)
-
-# View the final fitted model
-final_fit
+  add_model(logistic_regression_model) %>% 
+  add_recipe(recipe_model)
 
 
-# Collect predictions
-final_fit %>%
+fitted_model <- fit(workflow_model, data = training_data)
+
+
+testing_split <- initial_split(testing_data, prop = 0.8)  # Splitting testing data
+
+
+final_fitted_model <- last_fit(workflow_model, split = testing_split)
+
+# final fitted model
+final_fitted_model
+
+#Prediction
+final_fitted_model %>%
   collect_predictions()
 
-# Interpret accuracy
-final_fit %>%
+# Define the model configurtion
+final_fitted_model %>%
   collect_predictions() %>%
-  select(.pred_class, pass) %>%
-  mutate(correct = .pred_class == pass) %>%
-  tabyl(correct)
-
-# Wrap up and knit the document
-
+  select(.pred_class, pass_as_factor) %>%
+  mutate(correct_prediction = .pred_class == pass_as_factor) %>%
+  tabyl(correct_prediction)
